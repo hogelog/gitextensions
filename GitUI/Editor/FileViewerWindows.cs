@@ -2,6 +2,7 @@
 using System.Collections.Generic;
 using System.Drawing;
 using System.Windows.Forms;
+using System.Runtime.InteropServices;
 using GitCommands;
 using ICSharpCode.TextEditor;
 using ICSharpCode.TextEditor.Document;
@@ -98,8 +99,70 @@ namespace GitUI.Editor
 
         void VScrollBar_ValueChanged(object sender, EventArgs e)
         {
+            var pos = TextEditor.ActiveTextAreaControl.Caret.ScreenPosition;
+            SetIMEWindowLocation(pos.X, pos.Y);
             if (ScrollPosChanged != null)
                 ScrollPosChanged(sender, e);
+        }
+
+        [DllImport("imm32.dll")]
+        private static extern IntPtr ImmGetDefaultIMEWnd(IntPtr hWnd);
+
+        [DllImport("user32.dll")]
+        private static extern IntPtr SendMessage(IntPtr hWnd, int msg, IntPtr wParam, COMPOSITIONFORM lParam);
+
+        [StructLayout(LayoutKind.Sequential)]
+        private class COMPOSITIONFORM
+        {
+            public int dwStyle = 0;
+            public POINT ptCurrentPos = null;
+            public RECT rcArea = null;
+        }
+
+        [StructLayout(LayoutKind.Sequential)]
+        private class POINT
+        {
+            public int x = 0;
+            public int y = 0;
+        }
+
+        [StructLayout(LayoutKind.Sequential)]
+        private class RECT
+        {
+            public int left = 0;
+            public int top = 0;
+            public int right = 0;
+            public int bottom = 0;
+        }
+        private const int CFS_POINT = 0x0002;
+        private const int WM_IME_CONTROL = 0x0283;
+        private const int IMC_SETCOMPOSITIONWINDOW = 0x000c;
+
+        void SetIMEWindowLocation(int x, int y)
+        {
+            IntPtr hIMEWnd = ImmGetDefaultIMEWnd(TextEditor.ActiveTextAreaControl.Handle);
+            POINT p = new POINT();
+            p.x = x;
+            p.y = y;
+
+            COMPOSITIONFORM lParam = new COMPOSITIONFORM();
+            lParam.dwStyle = CFS_POINT;
+            lParam.ptCurrentPos = p;
+            lParam.rcArea = new RECT();
+
+            try
+            {
+                SendMessage(
+                    hIMEWnd,
+                    WM_IME_CONTROL,
+                    new IntPtr(IMC_SETCOMPOSITIONWINDOW),
+                    lParam
+                );
+            }
+            catch (AccessViolationException ex)
+            {
+                Console.WriteLine(ex);
+            }
         }
 
         void TextEditor_TextChanged(object sender, EventArgs e)
